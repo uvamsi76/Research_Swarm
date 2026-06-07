@@ -28,7 +28,7 @@ jobs:
             docker pull ${{ secrets.DOCKERHUB_USERNAME }}/researchswarm-ai_swarm:latest
             docker stop researchswarm-ai_swarm || true
             docker rm researchswarm-ai_swarm || true
-            docker run -d --name researchswarm-ai_swarm --restart always -p 8000:8000 ${{ secrets.DOCKERHUB_USERNAME }}/researchswarm-ai_swarm:latest
+            docker run -d --name researchswarm-ai_swarm --restart always -p 80:8000 ${{ secrets.DOCKERHUB_USERNAME }}/researchswarm-ai_swarm:latest
 
   # deploy-tool-service:
   #   name: Deploy tool_service to Azure VM
