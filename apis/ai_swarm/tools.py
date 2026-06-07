@@ -80,7 +80,7 @@ class ToolServiceClient:
             return f"[TOOL ERROR — {tool_name}] Invalid response: {exc}"
 
 
-TOOL_SERVICE_URL = "http://localhost:3000"
+TOOL_SERVICE_URL = "http://swarm-toolservice-api.duckdns.org"
 
 try:
     from os import getenv

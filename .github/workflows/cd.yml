@@ -37,27 +37,28 @@ jobs:
               -e LLM_API_KEY="${{ secrets.LLM_API_KEY }}" \
               -e LLM_PROVIDER="${{ secrets.LLM_PROVIDER }}" \
               -e LLM_MODEL="${{ secrets.LLM_MODEL }}" \
+              -e TOOL_SERVICE_URL="${{ secrets.TOOL_SERVICE_URL }}" \
               ${{ secrets.DOCKERHUB_USERNAME }}/researchswarm-ai_swarm:latest
 
-  # deploy-tool-service:
-  #   name: Deploy tool_service to Azure VM
-  #   runs-on: ubuntu-latest
+  deploy-tool-service:
+    name: Deploy tool_service to Azure VM
+    runs-on: ubuntu-latest
 
-  #   steps:
-  #     - name: Checkout repository
-  #       uses: actions/checkout@v4
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-  #     - name: Deploy tool_service to Azure VM via SSH
-  #       uses: appleboy/ssh-action@v0.1.7
-  #       with:
-  #         host: ${{ secrets.AZURE_VM_TOOL_SERVICE_HOST }}
-  #         username: ${{ secrets.AZURE_VM_USERNAME }}
-  #         key: ${{ secrets.AZURE_VM_SSH_KEY }}
-  #         port: 22
-  #         script: |
-  #           set -e
-  #           docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" -p "${{ secrets.DOCKERHUB_TOKEN }}"
-  #           docker pull ${{ secrets.DOCKERHUB_USERNAME }}/researchswarm-tool_service:latest
-  #           docker stop researchswarm-tool_service || true
-  #           docker rm researchswarm-tool_service || true
-  #           docker run -d --name researchswarm-tool_service --restart always -p 3000:3000 ${{ secrets.DOCKERHUB_USERNAME }}/researchswarm-tool_service:latest
+      - name: Deploy tool_service to Azure VM via SSH
+        uses: appleboy/ssh-action@v0.1.7
+        with:
+          host: ${{ secrets.AZURE_VM_TOOL_SERVICE_HOST }}
+          username: ${{ secrets.AZURE_VM_USERNAME }}
+          key: ${{ secrets.AZURE_VM_TOOL_SERVICE_SSH_KEY }}
+          port: 22
+          script: |
+            set -e
+            docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" -p "${{ secrets.DOCKERHUB_TOKEN }}"
+            docker pull ${{ secrets.DOCKERHUB_USERNAME }}/researchswarm-tool_service:latest
+            docker stop researchswarm-tool_service || true
+            docker rm researchswarm-tool_service || true
+            docker run -d --name researchswarm-tool_service --restart always -p 80:3000 ${{ secrets.DOCKERHUB_USERNAME }}/researchswarm-tool_service:latest
