@@ -1,14 +1,15 @@
-name: Deploy backend services to Azure VMs
+name: CD - Azure VM Docker Deployment
 
 on:
-  push:
-    branches:
-      - main
-  workflow_dispatch: {}
+  workflow_run:
+    workflows:
+      - CI - Backend Docker Build and Publish
+    types:
+      - completed
 
 jobs:
   deploy-ai-swarm:
-    name: Deploy ai_swarm to Azure VM
+    name: CD - Deploy ai_swarm to Azure VM
     runs-on: ubuntu-latest
 
     steps:
