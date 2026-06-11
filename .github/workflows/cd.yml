@@ -32,7 +32,7 @@ jobs:
             docker run -d \
               --name researchswarm-ai_swarm \
               --restart always \
-              -p 8000:8000 \
+              -p 127.0.0.1:8000:8000 \
               -e LLM_BASE_URL="${{ secrets.LLM_BASE_URL }}" \
               -e LLM_API_KEY="${{ secrets.LLM_API_KEY }}" \
               -e LLM_PROVIDER="${{ secrets.LLM_PROVIDER }}" \
