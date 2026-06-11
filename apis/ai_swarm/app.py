@@ -23,8 +23,8 @@ app = FastAPI(title="LangGraph Pipeline Service", version="0.1.0")
 # Allow cross-origin requests from the frontend (development convenience)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=["https://research-swarm-rosy.vercel.app", "http://localhost:3000"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
