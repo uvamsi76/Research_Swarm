@@ -85,10 +85,17 @@ class AgentResult(BaseModel):
     failure: Optional[str]
 
     def to_state_update(self, current_statuses: Dict[str, AgentStatus]) -> dict[str, Any]:
+        """Build state update from agent result.
+        
+        IMPORTANT: Only include the agent's own status update, not a copy of all statuses.
+        This prevents parallel specialists from overwriting each other's status updates
+        when LangGraph merges their returns using operator.or_.
+        """
+        agent_name = self.result_key.replace("_result", "")
         return {
             self.result_key: self.result,
             "agent_failures": [self.failure] if self.failure else [],
-            "agent_statuses": {**current_statuses, self.result_key.replace("_result", ""): self.status},
+            "agent_statuses": {agent_name: self.status},  # Only this agent's status, not all
         }
 
 

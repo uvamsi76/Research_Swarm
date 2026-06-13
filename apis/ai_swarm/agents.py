@@ -27,7 +27,7 @@ SPECIALIST_CONFIGS2: List[SpecialistConfig] = [
         task_key="financial_tasks",
         result_key="financial_result",
         system_prompt=(
-            "You are a quantitative financial analyst. Complete EVERY assigned task. "
+            "You are a quantitative financial analyst. Complete EVERY assigned task."
             "If any tool returns a [TOOL ERROR] message, note it clearly in your summary "
             "with the label '⚠️ Task incomplete:' and describe what could not be retrieved. "
             "Complete all other tasks normally."
@@ -47,6 +47,10 @@ SPECIALIST_CONFIGS: List[SpecialistConfig] = [
         result_key="web_result",
         system_prompt=(
             "You are a web research specialist. Complete EVERY assigned task. "
+            "IMPORTANT TOOL USAGE CONSTRAINTS: Each tool can be called maximum 3 times. "
+            "Total tool calls across all tools is limited to 15 per session. "
+            "If you encounter a [TOOL LIMIT EXCEEDED] message, wrap up your response with the findings "
+            "you have collected so far. Do not attempt to call more tools. "
             "If any tool returns a [TOOL ERROR] message, note it clearly in your summary "
             "with the label '⚠️ Task incomplete:' and describe what could not be retrieved. "
             "Complete all other tasks normally."
@@ -59,6 +63,10 @@ SPECIALIST_CONFIGS: List[SpecialistConfig] = [
         result_key="domain_result",
         system_prompt=(
             "You are a domain knowledge specialist. Complete EVERY assigned task. "
+            "IMPORTANT TOOL USAGE CONSTRAINTS: Each tool can be called maximum 3 times. "
+            "Total tool calls across all tools is limited to 15 per session. "
+            "If you encounter a [TOOL LIMIT EXCEEDED] message, wrap up your response with the findings "
+            "you have collected so far. Do not attempt to call more tools. "
             "If any tool returns a [TOOL ERROR] message, note it clearly in your summary "
             "with the label '⚠️ Task incomplete:' and describe what could not be retrieved. "
             "Complete all other tasks normally."
@@ -70,12 +78,16 @@ SPECIALIST_CONFIGS: List[SpecialistConfig] = [
         task_key="financial_tasks",
         result_key="financial_result",
         system_prompt=(
-            "You are a quantitative financial analyst. Complete EVERY assigned task. "
+            "You are a quantitative financial analyst. Complete EVERY assigned task. If needed break the given tasks into subtasks based on tools you are provided with. But break only when required. "
+            "IMPORTANT TOOL USAGE CONSTRAINTS: Each tool can be called maximum 3 times. "
+            "Total tool calls across all tools is limited to 15 per session. "
+            "If you encounter a [TOOL LIMIT EXCEEDED] message, wrap up your response with the findings "
+            "you have collected so far. Do not attempt to call more tools. "
             "If any tool returns a [TOOL ERROR] message, note it clearly in your summary "
             "with the label '⚠️ Task incomplete:' and describe what could not be retrieved. "
             "Complete all other tasks normally."
         ),
-        tool_names=["get_company_data", "funding_news_search", "job_postings_analyzer"],
+        tool_names=["get_company_data", "funding_news_search", "job_postings_analyzer", "search_across_internet"],
     ),
     SpecialistConfig(
         name="legal",
@@ -83,6 +95,10 @@ SPECIALIST_CONFIGS: List[SpecialistConfig] = [
         result_key="legal_result",
         system_prompt=(
             "You are a legal research specialist. Complete EVERY assigned task. "
+            "IMPORTANT TOOL USAGE CONSTRAINTS: Each tool can be called maximum 3 times. "
+            "Total tool calls across all tools is limited to 15 per session. "
+            "If you encounter a [TOOL LIMIT EXCEEDED] message, wrap up your response with the findings "
+            "you have collected so far. Do not attempt to call more tools. "
             "If any tool returns a [TOOL ERROR] message, note it clearly in your summary "
             "with the label '⚠️ Task incomplete:' and describe what could not be retrieved. "
             "Complete all other tasks normally."
@@ -106,7 +122,7 @@ class SpecialistAgent:
             return AgentResult(
                 result_key=self.config.result_key,
                 result="",
-                status=AgentStatus.PENDING,
+                status=AgentStatus.SUCCESS,
                 failure=None,
             )
 
@@ -126,20 +142,34 @@ class SpecialistAgent:
     def _safe_invoke(self, prompt: str) -> AgentResult:
         node_progress = _current_node_progress()
         try:
-            logger.info("Agent %s invoking LLM", self.config.name)
+            logger.info(
+                "Agent %s invoking LLM | available_tools=%s | tool_names=%s",
+                self.config.name,
+                len(self.tools),
+                self.config.tool_names,
+            )
             if node_progress is not None:
                 node_progress.mark_llm_request()
 
             agent = create_agent(model=self.llm.model, tools=self.tools, system_prompt=self.config.system_prompt)
+            logger.debug("Agent %s created with %s tools", self.config.name, len(self.tools))
+            
             output = agent.invoke({"messages": [HumanMessage(content=prompt)]})
             result_text = output["messages"][-1].content
-            logger.info("Agent %s completed LLM invoke | output_length=%s", self.config.name, len(result_text))
+            
+            logger.info(
+                "Agent %s completed LLM invoke | output_length=%s | has_tool_calls=%s",
+                self.config.name,
+                len(result_text),
+                "[TOOL" in result_text or "tool" in result_text.lower()
+            )
 
             if node_progress is not None:
                 node_progress.llm_response_received()
 
             if "⚠️ Task incomplete" in result_text or "[TOOL ERROR]" in result_text:
-                logger.warning("Agent %s returned partial result due to tool issues", self.config.name)
+                logger.warning("Agent %s returned partial result due to tool issues | tool_errors_detected=%s", 
+                               self.config.name, "[TOOL ERROR]" in result_text)
                 return AgentResult(
                     result_key=self.config.result_key,
                     result=result_text,
@@ -186,9 +216,9 @@ class SpecialistAgentFactory:
 class Orchestrator:
     SYSTEM_PROMPT = """You are the planning orchestrator in a multi-agent research system.
 Decompose the user query into specific, actionable task lists for up to four specialist agents:
-  1. web_tasks  — current web information, news, public data
+  1. web_tasks            — current web information, news, public data
   2. domain_tasks         — internal knowledge base, expert-curated content
-  3. financial_tasks      — market data, earnings, financial models
+  3. financial_tasks include accumulating funding_history,total_raised, last_funding_round_date, last_round_type, key_investors, revenue_estimate, employee_count, hiring_velocity, web_traffic_trend, burn_signals, financial_red_flags, confidence_overall etc
   4. legal_tasks          — case law, statutes, compliance checks
 
 Rules: tasks must be concrete (not \"research X\" but \"find Q3 revenue for X\").
@@ -259,6 +289,7 @@ Do not use names like "Web retrieval" or "Legal Assessment". Use the exact keys 
         for config_name, status in statuses.items():
             tasks = getattr(plan, f"{config_name}_tasks")
             if tasks:
+                print("Orchestrator tasks here:")
                 logger.info("%s tasks (%s): %s", config_name.capitalize(), len(tasks), tasks)
             else:
                 logger.info("%s: skipped (no tasks assigned)", config_name.capitalize())

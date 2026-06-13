@@ -63,10 +63,13 @@ def job_postings_analyzer(company: str) -> str:
     except Exception as exc:
         return _tool_error("job_postings_analyzer", exc)
 
-
-# def search_across_internet(query: str) -> dict:
-#     res1=ddg_news_search(query)
-#     res2=ddg_search(query)
+@log_tool
+def search_across_internet(query: str) -> dict:
+    try:
+        res=search_summarize(query)
+        return res
+    except Exception as exc:
+        return _tool_error("job_postings_analyzer", exc)
 
 # def web_traffic_estimator(company: str) -> str:
 #     try:

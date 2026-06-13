@@ -1,10 +1,17 @@
 from __future__ import annotations
 
+import json
 import logging
 from functools import wraps
 from typing import Callable, Dict
 
-from tool_impl import get_company_data, funding_news_search, job_postings_analyzer
+from tool_impl import (
+    get_company_data, 
+    funding_news_search, 
+    job_postings_analyzer, 
+    search_across_internet,
+)
+from tool_impl.utils import scrape_url_sync, ddg_news_search
 
 logger = logging.getLogger(__name__)
 
@@ -31,33 +38,71 @@ def _tool_error(tool_name: str, error: Exception) -> str:
 
 @log_tool
 def web_search(query: str) -> str:
+    """Perform web search using DDG and return formatted results."""
+    logger.info("Web search tool called | query=%s", query)
     try:
-        return f"[WEB SEARCH] Results for: '{query}'"
+        results = ddg_news_search(query)
+        logger.debug("Web search results received | count=%s", len(results) if isinstance(results, dict) else "n/a")
+        if isinstance(results, dict):
+            return json.dumps(results, indent=2)
+        return str(results)
     except Exception as exc:
+        logger.exception("Web search tool failed | query=%s", query)
         return _tool_error("web_search", exc)
 
 
 @log_tool
 def scrape_url(url: str) -> str:
+    """Scrape the provided URL and return formatted content."""
+    logger.info("Scrape URL tool called | url=%s", url)
     try:
-        return f"[SCRAPE] Content from {url}"
+        result = scrape_url_sync(url)
+        logger.debug("URL scraped | url=%s | content_length=%s", url, len(result.get("text", "")))
+        if isinstance(result, dict):
+            return json.dumps(result, indent=2)
+        return str(result)
     except Exception as exc:
+        logger.exception("Scrape URL tool failed | url=%s", url)
         return _tool_error("scrape_url", exc)
 
 
 @log_tool
 def knowledge_base_lookup(query: str) -> str:
+    """Lookup information in internal knowledge base."""
+    logger.info("Knowledge base lookup called | query=%s", query)
     try:
-        return f"[KB] Internal knowledge for: '{query}'"
+        # Currently returns structured knowledge base info
+        # In production, would query actual knowledge base
+        result = {
+            "source": "internal_knowledge_base",
+            "query": query,
+            "status": "lookup_complete",
+            "note": "Knowledge base lookup returning mock data. Connect to actual KB for real results."
+        }
+        logger.debug("Knowledge base lookup complete | query=%s", query)
+        return json.dumps(result, indent=2)
     except Exception as exc:
+        logger.exception("Knowledge base lookup failed | query=%s", query)
         return _tool_error("knowledge_base_lookup", exc)
 
 
 @log_tool
 def get_expert_report(topic: str) -> str:
+    """Request an expert analysis report for the given topic."""
+    logger.info("Expert report requested | topic=%s", topic)
     try:
-        return f"[EXPERT] Analysis on: '{topic}'"
+        # Currently returns structured report template
+        # In production, would generate actual expert analysis
+        result = {
+            "source": "expert_analyst",
+            "topic": topic,
+            "status": "report_generated",
+            "note": "Expert report returning mock template. Connect to actual expert system for real analysis."
+        }
+        logger.debug("Expert report generated | topic=%s", topic)
+        return json.dumps(result, indent=2)
     except Exception as exc:
+        logger.exception("Expert report failed | topic=%s", topic)
         return _tool_error("get_expert_report", exc)
 
 
@@ -124,6 +169,7 @@ TOOL_REGISTRY: Dict[str, Callable[..., str]] = {
     "get_company_data" : get_company_data,
     "funding_news_search":funding_news_search,
     "job_postings_analyzer":job_postings_analyzer,
+    "search_across_internet":search_across_internet
 }
 
 TOOL_REGISTRY2: Dict[str, Callable[..., str]] = {

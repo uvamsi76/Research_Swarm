@@ -94,17 +94,35 @@ tool_client = ToolServiceClient(TOOL_SERVICE_URL)
 
 
 def _remote_tool_call(tool_name: str, *args: Any, **kwargs: Any) -> str:
-    logger.info("Remote tool service call requested: %s", tool_name)
+    logger.info("Remote tool service call requested: %s | args=%s", tool_name, args)
     node_progress = _current_node_progress()
+    
+    # Check tool call limits before making the call
     if node_progress is not None:
+        can_call, error_msg = node_progress.check_tool_limit(tool_name)
+        if not can_call:
+            logger.warning("Tool call rejected due to limit | tool=%s | message=%s", tool_name, error_msg)
+            return error_msg
+        
+        # Increment counter and proceed
+        node_progress.increment_tool_call(tool_name)
         node_progress.tool_called(tool_name)
-    return tool_client.call_tool(tool_name, *args, **kwargs)
+    
+    result = tool_client.call_tool(tool_name, *args, **kwargs)
+    logger.info("Tool call completed: %s | output_length=%s", tool_name, len(result) if isinstance(result, str) else 0)
+    return result
 
 
 @tool
 def web_search(query: str) -> str:
     """Search the web for `query` using the remote tool service and return a text summary."""
     return _remote_tool_call("web_search", query)
+
+
+@tool
+def search_across_internet(query: str) -> str:
+    """Search the internet regarding `query` to get more information that is not obtained using the remote tool service"""
+    return _remote_tool_call("search_across_internet", query)
 
 
 @tool
@@ -116,7 +134,8 @@ def get_company_data(query: str) -> str:
     - Employee count range
     - All funding rounds (date, amount, type, investors)
     - Total funding raised
-    - Key executives/founders listed"""
+    - Key executives/founders listed 
+    using the remote tool service"""
     return _remote_tool_call("get_company_data", query)
 
 @tool
@@ -129,7 +148,8 @@ def funding_news_search(query: str) -> str:
     customers who all are the customers for the product,
     hiring_news,
     layoffs,
-    stealth_signals"""
+    stealth_signals
+    using the remote tool service"""
     return _remote_tool_call("funding_news_search", query)
 
 
@@ -143,6 +163,7 @@ def job_postings_analyzer(query: str) -> str:
     5. Hiring velocity: accelerating / stable / slowing / no postings
     6. Any stealth signals (hiring for product category not yet announced)
     7. Remote vs onsite split
+    using the remote tool service
     """
     return _remote_tool_call("job_postings_analyzer", query)
 

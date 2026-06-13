@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import logging
 from typing import Any, Callable, Dict, List, Optional
+import time
 
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Send
 
 from .agents import DevilAdvocate, Orchestrator, SpecialistAgentFactory, SPECIALIST_CONFIGS, Validator
-from .models import ParentState
+from .models import ParentState, AgentStatus
 from .progress import CURRENT_NODE_PROGRESS, NodeProgress
 
 logger = logging.getLogger(__name__)
@@ -27,14 +28,25 @@ class MultiAgentPipeline:
         builder.add_node("orchestrator", self.run_orchestrator)
         for specialist in self.specialists:
             builder.add_node(f"{specialist.config.name}_agent", self._make_specialist_node(specialist))
+        # Collector node: all specialists edge here to ensure synchronization
+        # Multiple edges → single node → LangGraph waits for all sources before invoking
+        builder.add_node("specialists_collector", self.collect_specialist_results)
+        # Join node that verifies all specialists completed
+        builder.add_node("specialists_done", self.wait_for_specialists)
         builder.add_node("devils_advocate", self.run_devils_advocate)
         builder.add_node("validator", self.run_validator)
 
         builder.add_edge(START, "orchestrator")
         builder.add_conditional_edges("orchestrator", self.fan_out)
 
+        # All specialists edge to collector node - this is the synchronization point
+        # LangGraph waits for all specialist edges before invoking the collector
         for specialist in self.specialists:
-            builder.add_edge(f"{specialist.config.name}_agent", "devils_advocate")
+            builder.add_edge(f"{specialist.config.name}_agent", "specialists_collector")
+
+        # Collector → join node → devils_advocate
+        builder.add_edge("specialists_collector", "specialists_done")
+        builder.add_edge("specialists_done", "devils_advocate")
 
         builder.add_edge("devils_advocate", "validator")
         builder.add_edge("validator", END)
@@ -47,17 +59,50 @@ class MultiAgentPipeline:
     def _make_specialist_node(self, specialist: Any) -> Callable[[ParentState], dict[str, Any]]:
         def node(state: ParentState) -> dict[str, Any]:
             node_name = f"{specialist.config.name}_agent"
+            num_tasks = len(state.get(specialist.config.task_key, []))
+            current_statuses = state.get("agent_statuses", {})
+            
             logger.info(
-                "Specialist node starting: %s | tasks=%s",
+                "Specialist node starting: %s | tasks=%s | available_tools=%s",
                 node_name,
-                len(state.get(specialist.config.task_key, [])),
+                num_tasks,
+                len(specialist.tools),
             )
-            node_progress = NodeProgress(node_name, expected_tool_steps=len(specialist.tools))
+            
+            # Handle empty task case - skip processing but still complete successfully
+            if not num_tasks:
+                logger.info("Specialist %s has no tasks | returning SUCCESS", specialist.config.name)
+                state_update = {
+                    f"{specialist.config.name}_result": "",
+                    "agent_failures": [],
+                    "agent_statuses": {specialist.config.name: AgentStatus.SUCCESS},
+                }
+                logger.info(
+                    "Specialist %s state update (no tasks): %s",
+                    specialist.config.name,
+                    state_update.get("agent_statuses", {}),
+                )
+                return state_update
+            
+            # Process specialist with tasks
+            # Estimate expected tool calls: approximately 1-2 tools per task
+            estimated_tool_calls = max(1, num_tasks * 2)
+            node_progress = NodeProgress(node_name, expected_tool_steps=estimated_tool_calls)
             token = CURRENT_NODE_PROGRESS.set(node_progress)
             try:
                 node_progress.start()
                 result = specialist.execute(state)
-                node_progress.complete()
+                
+                # Mark progress based on result status
+                if result.status.value == "success":
+                    node_progress.complete()
+                    logger.info("Specialist %s marked complete | status=SUCCESS", specialist.config.name)
+                elif result.status.value == "partial":
+                    node_progress.mark_partial()
+                    logger.warning("Specialist %s marked partial | status=PARTIAL", specialist.config.name)
+                else:  # failed
+                    node_progress.mark_partial()
+                    logger.error("Specialist %s marked partial due to failure | status=FAILED", specialist.config.name)
             finally:
                 CURRENT_NODE_PROGRESS.reset(token)
 
@@ -71,39 +116,89 @@ class MultiAgentPipeline:
             self._log_agent(
                 specialist.config.name,
                 result.status,
-                len(state.get(specialist.config.task_key, [])),
+                num_tasks,
                 result.failure,
             )
+            
+            # Build state update - only this specialist's status, not all
+            state_update = result.to_state_update(current_statuses)
             logger.info(
-                "State leaving specialist node: %s | status=%s | failure=%s",
+                "Specialist node state update: %s | status=%s",
                 specialist.config.name,
-                result.status.value,
-                result.failure,
+                state_update.get("agent_statuses", {}).get(specialist.config.name),
             )
-            return result.to_state_update(state.get("agent_statuses", {}))
+            
+            return state_update
 
         return node
 
     def fan_out(self, state: ParentState) -> List[Send]:
+        """Dispatch work to ALL specialists to ensure join node is reached.
+        
+        Dispatches to all specialists regardless of task count.
+        Specialists with tasks will process them; those without will no-op.
+        All specialists edge to the join node, guaranteeing it runs.
+        """
         sends: List[Send] = []
+        
+        # Always dispatch to all specialists
         for specialist in self.specialists:
-            if state.get(specialist.config.task_key):
-                sends.append(Send(f"{specialist.config.name}_agent", state))
-        if sends:
-            send_names = [
-                getattr(send, "target", None)
-                or getattr(send, "node", None)
-                or getattr(send, "name", None)
-                or repr(send)
-                for send in sends
-            ]
-            logger.info("Fan-out dispatching to agents: %s", send_names)
-        else:
-            logger.info("Fan-out skipped specialists: no tasks assigned, sending directly to Devil's Advocate")
-        return sends or [Send("devils_advocate", state)]
+            sends.append(Send(f"{specialist.config.name}_agent", state))
+        
+        dispatch_names = [f"{s.config.name}_agent" for s in self.specialists]
+        logger.info("Fan-out dispatching to all specialists: %s", dispatch_names)
+        
+        return sends
 
     def run_devils_advocate(self, state: ParentState) -> dict[str, str]:
         return self.devil.critique(state)
+
+    def collect_specialist_results(self, state: ParentState) -> dict[str, Any]:
+        """Collector node: synchronization point that waits for all specialists.
+        
+        In LangGraph, when multiple nodes have edges to a single node, that node 
+        is invoked only once with all updates merged. This collector acts as the 
+        synchronization point - all specialists edge here, ensuring they all 
+        complete before proceeding to the join node.
+        """
+        statuses = state.get("agent_statuses", {})
+        logger.info(
+            "Collector: all specialists reported | statuses=%s",
+            statuses,
+        )
+        
+        # Just pass through the merged state from all specialists
+        return {
+            "agent_statuses": statuses,
+            "agent_failures": state.get("agent_failures", []),
+        }
+
+    def wait_for_specialists(self, state: ParentState) -> dict[str, Any]:
+        """Join node: final verification before proceeding to critique/validation.
+        
+        By the time this node runs, all specialists have completed and their updates
+        have been merged by the collector node. This node just verifies and logs.
+        """
+        statuses = state.get("agent_statuses", {})
+        failures = state.get("agent_failures", [])
+        
+        logger.info(
+            "Join node: all specialists complete | verified statuses=%s | failures=%s",
+            statuses,
+            failures,
+        )
+        
+        # Log summary
+        for name in ["web", "domain", "financial", "legal"]:
+            status = statuses.get(name, "not_dispatched")
+            if status != "not_dispatched":
+                logger.info("  ✓ %s: %s", name, status.value if hasattr(status, 'value') else status)
+        
+        # Pass through to downstream nodes
+        return {
+            "agent_statuses": statuses,
+            "agent_failures": failures,
+        }
 
     def run_validator(self, state: ParentState) -> dict[str, Any]:
         return self.validator.validate(state)
