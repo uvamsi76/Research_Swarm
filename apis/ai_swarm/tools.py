@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 class ToolServiceClient:
-    def __init__(self, base_url: str, timeout_seconds: int = 10) -> None:
+    def __init__(self, base_url: str, timeout_seconds: int = 60) -> None:
         self.base_url = base_url.rstrip("/")
         self.session = requests.Session()
         self.timeout_seconds = timeout_seconds
@@ -20,7 +20,7 @@ class ToolServiceClient:
     def call_tool(self, tool_name: str, *args: Any, **kwargs: Any) -> str:
         url = f"{self.base_url}/tool/{tool_name}"
         payload = {"args": list(args), "kwargs": kwargs}
-        logger.info("Tool call start: %s | url=%s | args=%s | kwargs=%s", tool_name, url, args, kwargs)
+        logger.info("Tool service endpoint called: %s | url=%s | args=%s | kwargs=%s", tool_name, url, args, kwargs)
 
         try:
             response = self.session.post(url, json=payload, timeout=self.timeout_seconds)
@@ -80,7 +80,8 @@ class ToolServiceClient:
             return f"[TOOL ERROR — {tool_name}] Invalid response: {exc}"
 
 
-TOOL_SERVICE_URL = "http://swarm-toolservice-api.duckdns.org"
+# TOOL_SERVICE_URL = "http://swarm-toolservice-api.duckdns.org"
+TOOL_SERVICE_URL = "http://127.0.0.1:3000"
 
 try:
     from os import getenv
@@ -93,6 +94,7 @@ tool_client = ToolServiceClient(TOOL_SERVICE_URL)
 
 
 def _remote_tool_call(tool_name: str, *args: Any, **kwargs: Any) -> str:
+    logger.info("Remote tool service call requested: %s", tool_name)
     node_progress = _current_node_progress()
     if node_progress is not None:
         node_progress.tool_called(tool_name)
@@ -103,6 +105,46 @@ def _remote_tool_call(tool_name: str, *args: Any, **kwargs: Any) -> str:
 def web_search(query: str) -> str:
     """Search the web for `query` using the remote tool service and return a text summary."""
     return _remote_tool_call("web_search", query)
+
+
+@tool
+def get_company_data(query: str) -> str:
+    """Get comprehensive info regarding details of the company including 
+    - Company description
+    - Founded date
+    - Headquarters
+    - Employee count range
+    - All funding rounds (date, amount, type, investors)
+    - Total funding raised
+    - Key executives/founders listed"""
+    return _remote_tool_call("get_company_data", query)
+
+@tool
+def funding_news_search(query: str) -> str:
+    """Get Comprehensive info regarding news which include 
+    funding info who all funded and how much,
+    revenue ,
+    leadership who is the leadership that steered and currently steering,
+    competitors who all are competetors of this company,
+    customers who all are the customers for the product,
+    hiring_news,
+    layoffs,
+    stealth_signals"""
+    return _remote_tool_call("funding_news_search", query)
+
+
+@tool
+def job_postings_analyzer(query: str) -> str:
+    """ Get Comprehensive info regarding job postings made by the company which include 
+    1. Total open roles (approximate)
+    2. Roles by department (engineering / sales / marketing / ops / support)
+    3. Seniority distribution (senior-heavy vs junior-heavy)
+    4. Tech stack signals from job descriptions
+    5. Hiring velocity: accelerating / stable / slowing / no postings
+    6. Any stealth signals (hiring for product category not yet announced)
+    7. Remote vs onsite split
+    """
+    return _remote_tool_call("job_postings_analyzer", query)
 
 
 @tool

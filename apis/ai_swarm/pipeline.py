@@ -41,11 +41,17 @@ class MultiAgentPipeline:
         return builder.compile()
 
     def run_orchestrator(self, state: ParentState) -> dict[str, Any]:
+        logger.info("Orchestrator node invoked")
         return self.orchestrator.plan(state["query"])
 
     def _make_specialist_node(self, specialist: Any) -> Callable[[ParentState], dict[str, Any]]:
         def node(state: ParentState) -> dict[str, Any]:
             node_name = f"{specialist.config.name}_agent"
+            logger.info(
+                "Specialist node starting: %s | tasks=%s",
+                node_name,
+                len(state.get(specialist.config.task_key, [])),
+            )
             node_progress = NodeProgress(node_name, expected_tool_steps=len(specialist.tools))
             token = CURRENT_NODE_PROGRESS.set(node_progress)
             try:
@@ -54,6 +60,13 @@ class MultiAgentPipeline:
                 node_progress.complete()
             finally:
                 CURRENT_NODE_PROGRESS.reset(token)
+
+            logger.info(
+                "Specialist node completed: %s | status=%s | failure=%s",
+                node_name,
+                result.status.value,
+                result.failure,
+            )
 
             self._log_agent(
                 specialist.config.name,

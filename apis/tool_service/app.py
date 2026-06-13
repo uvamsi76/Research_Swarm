@@ -8,7 +8,17 @@ from .impl import TOOL_REGISTRY
 from .models import ToolRequest, ToolResponse
 
 logger = logging.getLogger(__name__)
+if not logging.getLogger().handlers:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s %(message)s",
+    )
+
 app = FastAPI(title="LangGraph Tool Service", version="0.1.0")
+
+@app.on_event("startup")
+def on_startup() -> None:
+    logger.info("LangGraph Tool Service started")
 
 # Allow cross-origin requests from the frontend (development convenience)
 app.add_middleware(
@@ -32,6 +42,7 @@ def list_tools() -> dict[str, list[str]]:
 
 @app.post("/tool/{tool_name}", response_model=ToolResponse)
 def invoke_tool(tool_name: str, request: ToolRequest) -> ToolResponse:
+    logger.info("Tool service request received: %s | args=%s | kwargs=%s", tool_name, request.args, request.kwargs)
     if tool_name not in TOOL_REGISTRY:
         raise HTTPException(status_code=404, detail=f"Tool '{tool_name}' is not available.")
 

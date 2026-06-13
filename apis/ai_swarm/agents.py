@@ -20,6 +20,26 @@ from . import tools
 
 logger = logging.getLogger(__name__)
 
+
+SPECIALIST_CONFIGS2: List[SpecialistConfig] = [
+    SpecialistConfig(
+        name="financial",
+        task_key="financial_tasks",
+        result_key="financial_result",
+        system_prompt=(
+            "You are a quantitative financial analyst. Complete EVERY assigned task. "
+            "If any tool returns a [TOOL ERROR] message, note it clearly in your summary "
+            "with the label '⚠️ Task incomplete:' and describe what could not be retrieved. "
+            "Complete all other tasks normally."
+        ),
+        tool_names=["get_company_data", "funding_news_search", "job_postings_analyzer"] #, "web_traffic_estimator", "revenue_estimator"
+    )
+]
+
+
+
+
+
 SPECIALIST_CONFIGS: List[SpecialistConfig] = [
     SpecialistConfig(
         name="web",
@@ -55,7 +75,7 @@ SPECIALIST_CONFIGS: List[SpecialistConfig] = [
             "with the label '⚠️ Task incomplete:' and describe what could not be retrieved. "
             "Complete all other tasks normally."
         ),
-        tool_names=["get_market_data", "get_earnings_report", "financial_model"],
+        tool_names=["get_company_data", "funding_news_search", "job_postings_analyzer"],
     ),
     SpecialistConfig(
         name="legal",

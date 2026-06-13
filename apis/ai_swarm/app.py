@@ -18,7 +18,17 @@ from .sse import _build_stage_event, _format_sse, _make_sse_queue_sink
 from .progress import SSE_EVENT_SINK
 
 logger = logging.getLogger(__name__)
+if not logging.getLogger().handlers:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s %(message)s",
+    )
+
 app = FastAPI(title="LangGraph Pipeline Service", version="0.1.0")
+
+@app.on_event("startup")
+def on_startup() -> None:
+    logger.info("LangGraph Pipeline Service started")
 
 # Allow cross-origin requests from the frontend (development convenience)
 app.add_middleware(
@@ -96,11 +106,14 @@ def _stream_pipeline_response(query: str) -> StreamingResponse:
     if not query:
         raise HTTPException(status_code=400, detail="Query parameter is required for SSE streaming.")
 
+    logger.info("Stream pipeline response start for query: %s", query)
+
     def event_generator():
         event_queue: queue.Queue[Optional[dict[str, Any]]] = queue.Queue()
         sink = _make_sse_queue_sink(event_queue)
 
         def worker() -> None:
+            logger.info("SSE worker thread started for query: %s", query)
             token = SSE_EVENT_SINK.set(sink)
             final_state: Optional[ParentState] = None
             try:
@@ -185,6 +198,7 @@ def stream_pipeline(request: QueryRequest) -> StreamingResponse:
 
 @app.get("/api/report")
 def get_report(query: str) -> StreamingResponse:
+    logger.info("API request received: /api/report | query=%s", query)
     if not query:
         raise HTTPException(status_code=400, detail="Query parameter is required for report retrieval.")
 

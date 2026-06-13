@@ -40,6 +40,15 @@ class NodeProgress:
         except Exception:
             pass
 
+        logger.debug(
+            "Progress update: node=%s progress=%s detail=%s tools_executed=%s expected_tool_steps=%s",
+            self.node,
+            self.progress,
+            detail,
+            self.tools_executed,
+            self.expected_tool_steps,
+        )
+
         _emit_sse_event(
             {
                 "event": "progress",
