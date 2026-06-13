@@ -83,7 +83,7 @@ const agentOrder = ['orchestrator', 'web', 'domain', 'financial', 'legal', 'devi
 
 function App() {
   const [query, setQuery] = useState(
-    'Should a Series B fund invest in vertical AI for healthcare in SEA in 2025?'
+    'Should a Series B fund invest in Sarvam AI ?'
   );
   const [status, setStatus] = useState('idle');
   const [running, setRunning] = useState(false);
